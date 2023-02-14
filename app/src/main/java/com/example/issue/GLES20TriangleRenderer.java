@@ -36,9 +36,10 @@ import android.os.SystemClock;
 import android.util.Log;
 
 class GLES20TriangleRenderer implements GLSurfaceView.Renderer {
-    private boolean mHangOnGlThreadAndRecover = false;
-    public GLES20TriangleRenderer(Context context) {
+
+    public GLES20TriangleRenderer(Context context, long onSurfaceCreatedMinDurationMs) {
         mContext = context;
+        mOnSurfaceCreatedMinDurationMs = onSurfaceCreatedMinDurationMs;
         mTriangleVertices = ByteBuffer.allocateDirect(mTriangleVerticesData.length
                 * FLOAT_SIZE_BYTES).order(ByteOrder.nativeOrder()).asFloatBuffer();
         mTriangleVertices.put(mTriangleVerticesData).position(0);
@@ -46,10 +47,6 @@ class GLES20TriangleRenderer implements GLSurfaceView.Renderer {
 
     Context getContext() {
         return mContext;
-    }
-
-    void hangAndRecover() {
-        mHangOnGlThreadAndRecover = true;
     }
 
     public void onDrawFrame(GL10 glUnused) {
@@ -85,15 +82,6 @@ class GLES20TriangleRenderer implements GLSurfaceView.Renderer {
         GLES20.glUniformMatrix4fv(muMVPMatrixHandle, 1, false, mMVPMatrix, 0);
         GLES20.glDrawArrays(GLES20.GL_TRIANGLES, 0, 3);
         checkGlError("glDrawArrays");
-
-        if(mHangOnGlThreadAndRecover) {
-            mHangOnGlThreadAndRecover = false;
-            try {
-                Thread.sleep(20000);
-            } catch (InterruptedException e) {
-                e.printStackTrace();
-            }
-        }
     }
 
     public void onSurfaceChanged(GL10 glUnused, int width, int height) {
@@ -105,6 +93,8 @@ class GLES20TriangleRenderer implements GLSurfaceView.Renderer {
     }
 
     public void onSurfaceCreated(GL10 glUnused, EGLConfig config) {
+        final long beginTimestamp = SystemClock.elapsedRealtime();
+
         // Ignore the passed-in GL10 interface, and use the GLES20
         // class's static methods instead.
         mProgram = createProgram(mVertexShader, mFragmentShader);
@@ -167,6 +157,18 @@ class GLES20TriangleRenderer implements GLSurfaceView.Renderer {
         bitmap.recycle();
 
         Matrix.setLookAtM(mVMatrix, 0, 0, 0, -5, 0f, 0f, 0f, 0f, 1.0f, 0.0f);
+
+        // Add sleep time, if needed, to simulate onSurfaceCreated() being at least as slow as
+        // mOnSurfaceCreatedMinDurationMs dictates.
+        final long remainingDurationMs = mOnSurfaceCreatedMinDurationMs -
+                (SystemClock.elapsedRealtime() - beginTimestamp);
+        if (remainingDurationMs > 0) {
+            try {
+                Thread.sleep(remainingDurationMs);
+            } catch (InterruptedException e) {
+                Thread.currentThread().interrupt();
+            }
+        }
     }
 
     private int loadShader(int shaderType, String source) {
@@ -266,5 +268,6 @@ class GLES20TriangleRenderer implements GLSurfaceView.Renderer {
     private int maTextureHandle;
 
     private Context mContext;
+    private final long mOnSurfaceCreatedMinDurationMs;
     private static String TAG = "GLES20TriangleRenderer";
 }
